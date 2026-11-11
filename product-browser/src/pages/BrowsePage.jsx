@@ -1,41 +1,47 @@
 import { useState, useEffect } from 'react'
-import {Link } from 'react-router-dom'
+import { Link, useParams } from 'react-router'
 
-// pagination means limit how much should show 
+function ProductDetailPage() {
+    const { id } = useParams();
+    const [product, setProduct] = useState(null);
 
-export default function BrowsePage() {
-  const [products, setProducts] = useState([]);
-  const [page, setPage] = useState(1);
+    useEffect(() => {
+        async function loadProduct() {
+            const res = await fetch(`https://dummyjson.com/products/${id}`);
+            const data = await res.json();
 
-  useEffect(() => {
-    async function loadProducts() {
-      const skip = (page - 1) * 10;
-      const res = await fetch(`https://dummyjson.com/products?limit=10&skip=${skip}`);
-      const data = await res.json();
-      setProducts(data.products);
-    }
-    loadProducts();
-  }, [page]);
+            setProduct(data);
+        }
+        loadProduct();
+    }, [id]);
 
-  return (
-    <>
-      <button disabled={page === 1} onClick={() => setPage(page -1)}> Previous </button>
-      <button disabled={page === products.length} onClick={() => setPage(page +1)}> Next </button>
+    if (!product) return <p>Loading .....</p>;
 
-      <span>Page {page}</span>
-      <p>loaded products are {products.length}</p>
-      <ul>
-        {products.map((product) => (
-          <li key={product.id}>
-            <img src={product.thumbnail}/>
-            <p>Title: {product.title}</p>
-            <p>Price: ${product.price}</p>
-            <p>rating: {product.rating}</p>
-            <p>Category: {product.category}</p>
-            <Link to={`/product/${product.id}`}>View Details</Link>
-          </li>
-        ))}
-      </ul>
-    </>
-  );
+    return (
+        <>
+        <Link to="/">← Back to products</Link>
+        <h2> {product.title}</h2>
+        <p>Description: {product.description}</p>
+        <p>Price: ${product.price}</p>
+        <p>Rating: {product.rating}</p>
+        <p>Category: {product.category}</p>
+        <p>Stock: {product.stock}</p>
+        <h3>Images</h3>
+            {product.images.map((image) => (
+                <img key={image} src={image} width="150" />
+            ))}
+        <h3>Reviews</h3>
+        <ul>
+            {product.reviews.map((review) => (
+            <li key={review.reviewerEmail}>
+                {review.reviewerName} ({review.rating}/5): {review.comment}
+            </li>
+            ))}
+        </ul>
+        </>
+    );
+
+    
 }
+
+export default ProductDetailPage;
