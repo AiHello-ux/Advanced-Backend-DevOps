@@ -37,7 +37,7 @@ export default function ProductDetailPage() {
 
       <h3>Reviews</h3>
       <ul>
-        {product.reviews && product.reviews.map((review, index) => (
+        {product.reviews && product.reviews.map((review, index) =>d (
           <li key={index}>
             <p><strong>{review.reviewerName}</strong> ({review.reviewerEmail})</p>
             <p>Rating: {review.rating}/5</p>
