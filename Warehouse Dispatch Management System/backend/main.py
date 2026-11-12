@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException,Header
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import date
 import functions
@@ -25,9 +25,10 @@ def register_package(package_name: str, destination: str, weight: float, arrival
     return functions.register_package(package_name=package_name, destination=destination, weight=weight, arrival_date=arrival_date, status=status)
  
 @app.get("/packages")
-def search_packages(destination=None, status=None, arrival_date: date = None):
-    if status and status not in VALID_STATUSES:
-        raise HTTPException(status_code=422, detail="Invalid status.")
+def search_packages(destination=None, status=None, arrival_date: date = None,token=Header(None)):
+    username = functions.verify_token(token)
+    if not username:
+        raise HTTPException(status_code=401, detail="invalid or expired token")
     return functions.search_packages(destination=destination, status=status, arrival_date=arrival_date)
  
 @app.get("/packages/statistics")
@@ -67,6 +68,8 @@ def search_batches(destination=None, vehicle=None, dispatch_status=None):
 
 
 @app.post("/login")
-def login(username:str,passward: str):
-    result = functions.login(username=username,passward=passward)
-    return result
+def login(username:str,password: str):
+    token = functions.verify_login(username=username, password=password)
+    if token is None:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    return { "token": token }

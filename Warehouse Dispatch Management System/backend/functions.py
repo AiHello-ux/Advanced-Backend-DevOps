@@ -1,6 +1,8 @@
 from sqlalchemy import Column, Integer, Float, String, Date, ForeignKey, create_engine
 from sqlalchemy.orm import Session, declarative_base
 
+import jwt
+from datetime import datetime, timedelta
 engine = create_engine("sqlite:///warehouse.db")
 Base = declarative_base()
 
@@ -45,7 +47,7 @@ def register_package(package_name, destination, weight, arrival_date, status):
         "package_name": pkg.package_name,
         "destination": pkg.destination,
         "weight": pkg.weight,
-        "arrival_date": str(pkg.arrival_date),
+        "arrival_date": pkg.arrival_date,
         "status": pkg.status,
         "batch_id": pkg.batch_id
     }
@@ -207,14 +209,39 @@ def search_batches(destination=None, vehicle=None, dispatch_status=None):
     return result
 
 
-# ----------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------------------------#
 USERNAME = "admin"
 PASSWORD = "admin123"
+access_token_expire_minutes = 25
+secret_key = "12345"
+algorithm = "HS256"
 
 # login and username
-def verify_logic(username,passward):
-    if username==USERNAME and passward==PASSWORD:
-        return True
+def verify_login(username, password):
+    if username == USERNAME and password == PASSWORD:
+        token =create_token(username=username)
+        return token
     return False
 
+#jwt has 3 parts one is header and then payload and then signature
+#exp is the expiry o the token 
+def create_token(username):
+    payload = {"username": username}
+    token = jwt.encode(payload, "secret", algorithm="HS256")
+    return token
 
+def create_token(username):
+    payload = {
+        "username": username,
+        "exp": datetime.now() + timedelta(minutes=access_token_expire_minutes)
+    }
+    token = jwt.encode(payload=payload, key=secret_key, algorithm=algorithm)
+    return token
+
+def verify_token(token):
+    try:
+        payload = jwt.decode(jwt=token, key=secret_key, algorithms=[algorithm])
+        return payload["username"]
+    except:
+        return False
+    
