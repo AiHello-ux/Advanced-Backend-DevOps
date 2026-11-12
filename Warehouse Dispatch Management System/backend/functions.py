@@ -207,3 +207,14 @@ def search_batches(destination=None, vehicle=None, dispatch_status=None):
     return result
 
 
+# ----------------------------------------------------------------------------------------
+USERNAME = "admin"
+PASSWORD = "admin123"
+
+# login and username
+def verify_logic(username,passward):
+    if username==USERNAME and passward==PASSWORD:
+        return True
+    return False
+
+

@@ -1,6 +1,6 @@
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 from datetime import date
 import functions
 
@@ -20,14 +20,8 @@ Valid_statuses = ["pending", "received", "dispatched"]
 Valid_dispatch_batches = ["pending", "dispatched"]
 
 
-class BatchCreate(BaseModel):
-    destination: str
-    vehicle: str
-    dispatch_status: str
-    package_ids: list[int]
 
-
-@app.post("/packages", status_code=201)
+@app.post("/packages")
 def register_package(package_name: str, destination: str, weight: str, arrival_date: date, status: str):
 
     if status not in Valid_statuses:
@@ -122,24 +116,7 @@ def search_batches(destination: str = None, vehicle: str = None, dispatch_status
     return result
 
 
-
-    if batch.dispatch_status not in Valid_dispatch_batches:
-        raise HTTPException(status_code=422, detail="Invalid dispatch status.")
-
-    for package_id in batch.package_ids:
-        package = functions.get_one_package(id=package_id)
-
-        if package is None:
-            raise HTTPException(status_code=404, detail="Package not found")
-
-        if package["batch_id"] is not None:
-            raise HTTPException(status_code=400, detail="Package already assigned to a batch")
-
-    result = functions.create_batch(
-        destination=batch.destination,
-        vehicle=batch.vehicle,
-        dispatch_status=batch.dispatch_status,
-        package_ids=batch.package_ids
-    )
-
+@app.post("/login")
+def login(username:str,passward: str):
+    result = functions.login(username=username,passward=passward)
     return result
