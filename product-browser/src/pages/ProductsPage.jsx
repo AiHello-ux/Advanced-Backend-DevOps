@@ -1,7 +1,7 @@
 import {useState, useEffect} from 'react';
 import {Link }  from 'react-router';
 
-
+// skip is used for pagination
 function BrowsePage() {
     const [products, setProducts] = useState([]);
     const [page, setPage] = useState(1);
