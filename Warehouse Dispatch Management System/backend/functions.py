@@ -2,7 +2,7 @@ from sqlalchemy import Column, Integer, Float, String, Date, ForeignKey, create_
 from sqlalchemy.orm import Session, declarative_base
 
 import jwt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 engine = create_engine("sqlite:///warehouse.db")
 Base = declarative_base()
 
@@ -35,7 +35,7 @@ def register_package(package_name, destination, weight, arrival_date, status):
     pkg = Package(
         package_name=package_name,
         destination=destination,
-        weight=float(weight),
+        weight=weight,
         arrival_date=arrival_date,
         status=status
     )
@@ -138,7 +138,6 @@ def delete_package(id):
     session.close()
     return True
 
-
 def search_packages(destination=None, status=None, arrival_date=None):
     session = Session(engine)
 
@@ -155,10 +154,9 @@ def search_packages(destination=None, status=None, arrival_date=None):
 
     packages = query.all()
 
-    result = []
-
+    results = []
     for pkg in packages:
-        result.append({
+        results.append({
             "id": pkg.id,
             "package_name": pkg.package_name,
             "destination": pkg.destination,
@@ -169,10 +167,9 @@ def search_packages(destination=None, status=None, arrival_date=None):
         })
 
     session.close()
-    return result
+    return results
 
-
-def search_batches(destination=None, vehicle=None, dispatch_status=None):
+def view_dispatch_batches(destination=None, vehicle=None, dispatch_status=None):
     session = Session(engine)
 
     query = session.query(DispatchBatch)
@@ -188,33 +185,34 @@ def search_batches(destination=None, vehicle=None, dispatch_status=None):
 
     batches = query.all()
 
-    result = []
-
+    results = []
     for batch in batches:
-        packages = session.query(Package).filter(Package.batch_id == batch.id).all()
-
-        package_ids = []
-        for pkg in packages:
-            package_ids.append(pkg.id)
-
-        result.append({
+        results.append({
             "id": batch.id,
             "destination": batch.destination,
             "vehicle": batch.vehicle,
-            "dispatch_status": batch.dispatch_status,
-            "package_ids": package_ids
+            "dispatch_status": batch.dispatch_status
         })
 
     session.close()
-    return result
+    return results
 
 
 # ----------------------------------------------------------------------------------------#
 USERNAME = "admin"
 PASSWORD = "admin123"
-access_token_expire_minutes = 25
+access_token_expire_minutes = 1
+refresh_token_expire = 7 * 24 * 60
 secret_key = "12345"
 algorithm = "HS256"
+
+
+def login(username,password):
+    if username == USERNAME and password == PASSWORD:
+        access_token = create_token(username=username,token_type="access")
+        refresh_token = create_token(username=username,token_type="refresh")
+        return {"access_token":access_token,"refresh_token":refresh_token}
+    return None
 
 # login and username
 def verify_login(username, password):
@@ -225,23 +223,13 @@ def verify_login(username, password):
 
 #jwt has 3 parts one is header and then payload and then signature
 #exp is the expiry o the token 
-def create_token(username):
-    payload = {"username": username}
-    token = jwt.encode(payload, "secret", algorithm="HS256")
-    return token
-
-def create_token(username):
+def create_token(username, token_type):
     payload = {
         "username": username,
-        "exp": datetime.now() + timedelta(minutes=access_token_expire_minutes)
+        'token_type': token_type,
+        "exp": datetime.now(timezone.utc) + timedelta(
+            minutes=refresh_token_expire if token_type == "access" else refresh_token_expire)  
     }
     token = jwt.encode(payload=payload, key=secret_key, algorithm=algorithm)
     return token
 
-def verify_token(token):
-    try:
-        payload = jwt.decode(jwt=token, key=secret_key, algorithms=[algorithm])
-        return payload["username"]
-    except:
-        return False
-    
