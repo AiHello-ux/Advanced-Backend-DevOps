@@ -26,6 +26,12 @@ class Package(Base):
     batch_id = Column(Integer, ForeignKey("dispatch_batches.id"), nullable=True)
 
 
+class User(Base):
+    __tablename__ ="users"
+    user_id = Column(Integer, primary_key=True)
+    username = Column(String)
+    password = Column(String)
+
 Base.metadata.create_all(engine)
 
 
