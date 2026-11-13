@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException,Header
+from fastapi import FastAPI, HTTPException, Header, Body
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import date
 import functions
@@ -54,9 +54,9 @@ def delete_package(id: int,token = Header(None)):
     return functions.delete_package(id=id)
  
 @app.post("/login")
-def login(username:str,password:str):
+def login(username = Body(),password =Body):
     tokens = functions.login(username=username,password=password)
-    if tokens is None:
+    if tokens is not None:
         raise HTTPException(status_code=401,detail="Invalid credentials")
     return tokens
 
@@ -79,3 +79,10 @@ def view_dispatch_batches(destination: str = None, vehicle: str = None, dispatch
     if dispatch_status and dispatch_status not in VALID_BATCH_STATUSES:
         raise HTTPException(status_code=422, detail="Invalid dispatch status.")
     return functions.view_dispatch_batches(destination=destination, vehicle=vehicle, dispatch_status=dispatch_status)
+
+
+@app.post("/register")
+def register_user(username=Body() ,passward =Body()):
+    if functions.register_user(username=username,passward=passward):
+        return {"message": "user registered succses fully"}
+    raise HTTPException(status_code=400,detail="username aldready there ")

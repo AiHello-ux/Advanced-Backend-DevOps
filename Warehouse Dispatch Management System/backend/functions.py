@@ -1,11 +1,14 @@
 from sqlalchemy import Column, Integer, Float, String, Date, ForeignKey, create_engine
 from sqlalchemy.orm import Session, declarative_base
-
+from argon2 import PasswordHasher
 import jwt
 from datetime import datetime, timedelta, timezone
+from argon2.exceptions import VerifyMismatchError
+
+
 engine = create_engine("sqlite:///warehouse.db")
 Base = declarative_base()
-
+ph=PasswordHasher()
 
 class DispatchBatch(Base):
     __tablename__ = "dispatch_batches"
@@ -221,12 +224,23 @@ def login(username,password):
     return None
 
 # login and username
-def verify_login(username, password):
-    if username == USERNAME and password == PASSWORD:
-        token =create_token(username=username)
-        return token
-    return False
-
+def verify_login(username, passward):
+    session=Session(engine)
+    user=Session.query(User).filter_by(username=username).first()
+    if user is None:
+        session.close()
+        return False
+    try:
+        ph.verify(user.passward,passward)
+    except VerifyMismatchError:
+        return False
+    session.close()
+    access_token=create_token(username=username,token_type="access")
+    refresh_token=create_token(username=username,token_type="refresh")
+    return {"access_token":access_token,"refresh_token":refresh_token}
+        
+        
+        
 #jwt has 3 parts one is header and then payload and then signature
 #exp is the expiry o the token 
 def create_token(username, token_type):
@@ -238,4 +252,19 @@ def create_token(username, token_type):
     }
     token = jwt.encode(payload=payload, key=secret_key, algorithm=algorithm)
     return token
+
+#------------------------------------------#
+
+def register_user(username:str,passward:str):
+    session=Session(engine)
+    username_exist=session.query(User).filter_by(username=username).first()
+    if username_exist is not None:
+
+        session.close()
+        return False
+    session.add(User(username=username, password=ph.hash(passward)))
+    session.commit()
+    session.close()
+    return  True
+
 

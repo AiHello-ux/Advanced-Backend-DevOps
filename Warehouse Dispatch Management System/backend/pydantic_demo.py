@@ -4,7 +4,6 @@ from pydantic import BaseModel
 engine = create_engine("sqlite:///warehouse.db")
 Base = declarative_base()
 
-
 class WithoutPydanticModel(Base):
     __tablename__ = "packages"
 
@@ -27,6 +26,7 @@ print(package.package_name)
 print(package.destination)
 print(package.weight)
 
+
 class PydanticModel(BaseModel):
     package_name: str
     destination: str
@@ -36,7 +36,7 @@ class PydanticModel(BaseModel):
 package = PydanticModel(
     package_name="Laptop",
     destination="Bangalore",
-    weight=10
+    weight="ten"
 )
 
 print(package.package_name)
