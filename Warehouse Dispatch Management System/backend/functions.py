@@ -28,7 +28,6 @@ class Package(Base):
 
 class User(Base):
     __tablename__ = "users"
-
     user_id = Column(Integer, primary_key=True)
     username = Column(String)
     password = Column(String)
@@ -280,7 +279,7 @@ def verify_token(token, token_type):
         return payload
     return False
 
-def register_user(username: str, password: str):
+def register_user(username: str, password: str, user_type: str):
     session = Session(engine)
     username_exist = session.query(User).filter_by(username=username).first()
     if username_exist is not None:
@@ -289,7 +288,7 @@ def register_user(username: str, password: str):
     session.add(User(
         username=username,
         password=ph.hash(password),
-        user_type="user"
+        user_type=user_type
     ))
     session.commit()
     session.close()
