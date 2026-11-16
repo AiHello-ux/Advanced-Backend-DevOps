@@ -1,118 +1,359 @@
-from fastapi import FastAPI, HTTPException, Header, Body
-from fastapi.middleware.cors import CORSMiddleware
-from datetime import date
-import functions
-from pydantic import BaseModel
+from sqlalchemy import Column, Integer, Float, String, Date, ForeignKey, create_engine
+from sqlalchemy.orm import Session, declarative_base
 
-app = FastAPI(
-    title = "Warehouse Dispatch Management System",
-    description = "Warehouse Dispatches"
-)
+import jwt
+from datetime import datetime , timedelta , timezone
 
-class Package(BaseModel):
-    package_name: str
-    destination: str
-    weight: float
-    arrival_date: date
-    status: str
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "https://127.0.0.1:5173"],
-    allow_methods=["*"],
-    allow_headers=["*"]
-)
- 
-VALID_STATUSES = ["pending", "received", "dispatched"]
-VALID_BATCH_STATUSES = ["pending", "dispatched"]
- 
-@app.post("/packages")
-def register_package(pkg: Package):
-    if pkg.status not in VALID_STATUSES:
-        raise HTTPException(status_code=422, detail="Invalid status.")
-    return functions.register_package(
-        package_name=pkg.package_name,
-        destination=pkg.destination,
-        weight=pkg.weight,
-        arrival_date=pkg.arrival_date,
-        status=pkg.status
+engine = create_engine("sqlite:///warehouse.db")
+Base = declarative_base()
+
+ph=PasswordHasher()
+
+class DispatchBatch(Base):
+    __tablename__ = "dispatch_batches"
+    id = Column(Integer, primary_key=True)
+    destination = Column(String)
+    vehicle = Column(String)
+    dispatch_status = Column(String)
+
+
+class Package(Base):
+    __tablename__ = "packages"
+    id = Column(Integer, primary_key=True)
+    package_name = Column(String) 
+    destination = Column(String)
+    weight = Column(Float)
+    arrival_date = Column(Date)
+    status = Column(String)
+    batch_id = Column(Integer, ForeignKey("dispatch_batches.id"), nullable=True)
+
+class Users(Base):
+    __tablename__ = "users"
+    user_id = Column(Integer , primary_key=True)
+    user_name = Column(String)
+    password = Column(String)
+    role = Column(String, default="staff")
+
+
+Base.metadata.create_all(engine)
+
+
+def register_package(package_name, destination, weight, arrival_date, status):
+    session = Session(engine)
+
+    pkg = Package(
+        package_name=package_name,
+        destination=destination,
+        weight=float(weight),
+        arrival_date=arrival_date,
+        status=status
     )
- 
- 
-@app.get("/packages/search")
-def search_packages(destination: str = None, status: str = None, arrival_date: date = None):
-    if status and status not in VALID_STATUSES:
-        raise HTTPException(status_code=422, detail="Invalid status.")
-    return functions.search_packages(destination=destination, status=status, arrival_date=arrival_date)
- 
-@app.patch("/packages/{id}")
-def update_package(id: int, package_name: str = None, destination: str = None, weight: float = None, arrival_date: date = None, status: str = None):
-    if status and status not in VALID_STATUSES:
-        raise HTTPException(status_code=422, detail="invalid status.")
-    result = functions.update_package(id=id, package_name=package_name, destination=destination, weight=weight, arrival_date=arrival_date, status=status)
-    if not result:
-        raise HTTPException(status_code=404, detail="package not found")
-    return result
- 
-@app.delete("/packages/{id}")
-def delete_package(id: int, token=Header(None)):
-    payload = functions.verify_token(token=token, token_type="access")
-    if not payload:
-        raise HTTPException(status_code=401, detail="Invalid or expired token.")
-    if payload.get("user_type") != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required.")
-    return functions.delete_package(id=id)
+    session.add(pkg)
+    session.commit()
 
-@app.get("/statistics")
-def warehouse_statistics(token=Header(None)):
-    payload = functions.verify_token(token=token, token_type="access")
-    if not payload:
-        raise HTTPException(status_code=401, detail="Invalid or expired token.") 
-    return functions.warehouse_statistics()
+    result = {
+        "id": pkg.id,
+        "package_name": pkg.package_name,
+        "destination": pkg.destination,
+        "weight": pkg.weight,
+        "arrival_date": str(pkg.arrival_date),
+        "status": pkg.status,
+        "batch_id": pkg.batch_id
+    }
 
-@app.post("/dispatch-batches")
-def create_dispatch_batch(destination: str, vehicle: str, dispatch_status: str = "pending", package_ids: list[int] = Body(default=None)):
-    if dispatch_status not in VALID_BATCH_STATUSES:
-        raise HTTPException(status_code=422, detail="Invalid dispatch status.")
-    return functions.create_dispatch_batch(destination=destination, vehicle=vehicle, dispatch_status=dispatch_status, package_ids=package_ids)
-
-@app.get("/packages/{id}")
-def get_one_package(id: int):
-    result = functions.get_one_package(id=id)
-    if not result:
-        raise HTTPException(status_code=404, detail="Package not found")
+    session.close()
     return result
 
-@app.get("/dispatch-batches")
-def view_dispatch_batches(destination: str = None, vehicle: str = None, dispatch_status: str = None):
-    if dispatch_status and dispatch_status not in VALID_BATCH_STATUSES:
-        raise HTTPException(status_code=422, detail="Invalid dispatch status.")
-    return functions.view_dispatch_batches(destination=destination, vehicle=vehicle, dispatch_status=dispatch_status)
 
-@app.get("/login")
-def login(username: str, password: str):
-    tokens = functions.verify_login(username=username, password=password)
-    if not tokens:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    return tokens
+def get_one_package(id):
+    session = Session(engine)
 
-@app.post("/refresh")
-def refresh(refresh_token):
-    payload = functions.verify_token(token=refresh_token, token_type="refresh")
+    pkg = session.query(Package).filter(Package.id == id).first()
 
-    if not payload:
-        raise HTTPException(status_code=401, detail="Invalid or Expired Token")
+    if pkg is None:
+        session.close()
+        return None
 
-    username = payload.get("username")
-    user_type = payload.get("user_type")
+    result = {
+        "id": pkg.id,
+        "package_name": pkg.package_name,
+        "destination": pkg.destination,
+        "weight": pkg.weight,
+        "arrival_date": str(pkg.arrival_date),
+        "status": pkg.status,
+        "batch_id": pkg.batch_id
+    }
 
-    access_token = functions.create_token(username=username, token_type="access", user_type=user_type)
+    session.close()
+    return result
 
-    return {"access_token": access_token}
 
-@app.post("/register")
-def register_user(username: str, password: str, user_type: str):
-    if functions.register_user(username=username, password=password, user_type=user_type):
-        return {"message": "user registered successfully"}
+def update_package(id, package_name=None, destination=None, weight=None, arrival_date=None, status=None):
+    session = Session(engine)
 
-    raise HTTPException(status_code=400, detail="Username already exists")
+    pkg = session.query(Package).filter(Package.id == id).first()
+
+    if pkg is None:
+        session.close()
+        return None
+
+    if package_name is not None:
+        pkg.package_name = package_name
+
+    if destination is not None:
+        pkg.destination = destination
+
+    if weight is not None:
+        pkg.weight = float(weight)
+
+    if arrival_date is not None:
+        pkg.arrival_date = arrival_date
+
+    if status is not None:
+        pkg.status = status
+
+    session.commit()
+
+    result = {
+        "id": pkg.id,
+        "package_name": pkg.package_name,
+        "destination": pkg.destination,
+        "weight": pkg.weight,
+        "arrival_date": str(pkg.arrival_date),
+        "status": pkg.status,
+        "batch_id": pkg.batch_id
+    }
+
+    session.close()
+    return result
+
+
+def delete_package(id):
+    session = Session(engine)
+
+    pkg = session.query(Package).filter(Package.id == id).first()
+
+    if pkg is None:
+        session.close()
+        return None
+
+    if pkg.status == "dispatched":
+        session.close()
+        return None
+
+    session.delete(pkg)
+    session.commit()
+
+    session.close()
+    return True
+
+
+def search_packages(destination=None, status=None, arrival_date=None):
+    session = Session(engine)
+
+    query = session.query(Package)
+
+    if destination is not None:
+        query = query.filter(Package.destination == destination)
+
+    if status is not None:
+        query = query.filter(Package.status == status)
+
+    if arrival_date is not None:
+        query = query.filter(Package.arrival_date == arrival_date)
+
+    packages = query.all()
+
+    result = []
+
+    for pkg in packages:
+        result.append({
+            "id": pkg.id,
+            "package_name": pkg.package_name,
+            "destination": pkg.destination,
+            "weight": pkg.weight,
+            "arrival_date": str(pkg.arrival_date),
+            "status": pkg.status,
+            "batch_id": pkg.batch_id
+        })
+
+    session.close()
+    return result
+
+
+def search_batches(destination=None, vehicle=None, dispatch_status=None):
+    session = Session(engine)
+
+    query = session.query(DispatchBatch)
+
+    if destination is not None:
+        query = query.filter(DispatchBatch.destination == destination)
+
+    if vehicle is not None:
+        query = query.filter(DispatchBatch.vehicle == vehicle)
+
+    if dispatch_status is not None:
+        query = query.filter(DispatchBatch.dispatch_status == dispatch_status)
+
+    batches = query.all()
+
+    result = []
+
+    for batch in batches:
+        packages = session.query(Package).filter(Package.batch_id == batch.id).all()
+
+        package_ids = []
+        for pkg in packages:
+            package_ids.append(pkg.id)
+
+        result.append({
+            "id": batch.id,
+            "destination": batch.destination,
+            "vehicle": batch.vehicle,
+            "dispatch_status": batch.dispatch_status,
+            "package_ids": package_ids
+        })
+
+    session.close()
+    return result
+
+
+def create_batch(destination, vehicle, dispatch_status="pending", package_ids=None):
+    session = Session(engine)
+
+    packages = []
+    if package_ids:
+        for pid in package_ids:
+            pkg = session.query(Package).filter(Package.id == pid).first()
+            if pkg is None:
+                session.close()
+                return None, pid
+            packages.append(pkg)
+
+    batch = DispatchBatch(
+        destination=destination,
+        vehicle=vehicle,
+        dispatch_status=dispatch_status
+    )
+    session.add(batch)
+    session.commit()
+
+    assigned_ids = []
+    for pkg in packages:
+        pkg.batch_id = batch.id
+        if dispatch_status == "dispatched":
+            pkg.status = "dispatched"
+        assigned_ids.append(pkg.id)
+
+    session.commit()
+
+    result = {
+        "id": batch.id,
+        "destination": batch.destination,
+        "vehicle": batch.vehicle,
+        "dispatch_status": batch.dispatch_status,
+        "package_ids": assigned_ids
+    }
+
+    session.close()
+    return result, None
+
+
+def get_warehouse_stats():
+    session = Session(engine)
+
+    packages = session.query(Package).all()
+
+    total_received = len(packages)
+    total_dispatched = 0
+    total_pending = 0
+    destination_counts = {}
+
+    for pkg in packages:
+        if pkg.status == "dispatched":
+            total_dispatched += 1
+        else:
+            total_pending += 1
+
+        destination_counts[pkg.destination] = destination_counts.get(pkg.destination, 0) + 1
+
+    session.close()
+    return {
+        "total_packages_received": total_received,
+        "total_packages_pending": total_pending,
+        "total_packages_dispatched": total_dispatched,
+        "destination_wise_count": destination_counts
+    }
+
+
+USERNAME = "admin"
+PASSWORD = "admin123"
+
+ACESSS_TOKEN_EXPIRY = 15
+REFRESH_TOKEN_EXPIRY = 7 * 24 
+SECRET_KEY = "123SECRET"
+ALGORITHM = "HS256"
+
+
+def verify_login(username,password):
+    session=Session(engine)
+    query = session.query(Users).filter(Users.user_name == username).first()
+    if query is None:
+        session.close()
+        return False
+    try:
+        ph.verify(query.password,password)
+    except VerifyMismatchError:
+        session.close()
+        return False
+    role = query.role or "staff"
+    session.close()
+    access_token = create_token(username=username, role=role, tokentype = "access")
+    refresh_token = create_token(username=username, role=role, tokentype="refresh")
+    return {"access_token":access_token,"refresh_token":refresh_token, "role": role}
+ 
+def create_token(username:str, role:str = "staff", tokentype:str = "access"):
+    if tokentype == "access":
+        payload={
+            "username":username,
+            "role": role, 
+            "tokentype":tokentype,
+            "exp" :datetime.now(timezone.utc) + timedelta(minutes=ACESSS_TOKEN_EXPIRY)
+        }
+    elif tokentype == "refresh":
+        payload={
+            "username":username,
+            "role": role,
+            "tokentype":tokentype,
+            "exp" :datetime.now(timezone.utc) + timedelta(minutes=REFRESH_TOKEN_EXPIRY)
+        }
+
+    token = jwt.encode(payload=payload,key=SECRET_KEY,algorithm=ALGORITHM)
+    return token
+    
+def verify_token(token,tokentype="access"):
+    try:
+        payload = jwt.decode(jwt=token,key=SECRET_KEY,algorithms=[ALGORITHM])
+    except Exception:
+        return False
+
+    if payload["tokentype"] == tokentype:
+        return {
+            "username": payload["username"],
+            "role": payload.get("role", "staff")
+        }
+    return False
+
+def register_user(user_name:str,password:str, role:str = "staff"):
+    session = Session(engine)
+    user_exits=session.query(Users).filter_by(user_name=user_name).first()
+    if user_exits is not None:
+        session.close()
+        return False
+    session.add(Users(user_name=user_name,password=ph.hash(password), role=role))
+    session.commit()
+    session.close()
+    return True
